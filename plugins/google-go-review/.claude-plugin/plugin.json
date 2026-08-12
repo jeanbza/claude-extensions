@@ -1,0 +1,20 @@
+{
+  "name": "jeanbza",
+  "displayName": "Google Go Code Review",
+  "version": "0.1.0",
+  "description": "Reviews Go code against Effective Go, the Google Go Style Guide, and the Go module and language references, then simplifies and de-slops the result.",
+  "author": {
+    "name": "Jean Barkhuysen",
+    "url": "https://github.com/jeanbza"
+  },
+  "homepage": "https://github.com/jeanbza/claude-extensions/tree/main/plugins/google-go-review",
+  "repository": "https://github.com/jeanbza/claude-extensions",
+  "license": "Apache-2.0",
+  "keywords": [
+    "go",
+    "golang",
+    "code-review",
+    "style-guide",
+    "google"
+  ]
+}

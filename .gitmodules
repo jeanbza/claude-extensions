@@ -1,0 +1,14 @@
+[submodule "third_party/styleguide"]
+	path = third_party/styleguide
+	url = https://github.com/google/styleguide
+	branch = gh-pages
+[submodule "third_party/go-website"]
+	path = third_party/go-website
+	url = https://github.com/golang/website
+[submodule "third_party/abseil-docs"]
+	path = third_party/abseil-docs
+	url = https://github.com/abseil/abseil.github.io
+[submodule "third_party/go"]
+	path = third_party/go
+	url = https://github.com/golang/go
+	shallow = true

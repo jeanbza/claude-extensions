@@ -1,0 +1,21 @@
+{
+  "name": "jeanbza",
+  "displayName": "Google C++ Code Review",
+  "version": "0.1.0",
+  "description": "Reviews C++ code against the Google C++ Style Guide and, for code that uses Abseil, the Abseil guides \u2014 including the danger of atomics \u2014 then simplifies and de-slops the result.",
+  "author": {
+    "name": "Jean Barkhuysen",
+    "url": "https://github.com/jeanbza"
+  },
+  "homepage": "https://github.com/jeanbza/claude-extensions/tree/main/plugins/google-cpp-review",
+  "repository": "https://github.com/jeanbza/claude-extensions",
+  "license": "Apache-2.0",
+  "keywords": [
+    "cpp",
+    "c++",
+    "abseil",
+    "code-review",
+    "style-guide",
+    "google"
+  ]
+}

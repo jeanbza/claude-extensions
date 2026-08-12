@@ -1,0 +1,44 @@
+{
+  "name": "jeanbza",
+  "description": "Jean Barkhuysen's Claude Code plugins: code review skills built on published style guides.",
+  "owner": {
+    "name": "Jean Barkhuysen",
+    "url": "https://github.com/jeanbza"
+  },
+  "plugins": [
+    {
+      "name": "google-go-review",
+      "source": "./plugins/google-go-review",
+      "category": "code-review",
+      "tags": [
+        "go",
+        "golang",
+        "style-guide",
+        "google"
+      ]
+    },
+    {
+      "name": "google-cpp-review",
+      "source": "./plugins/google-cpp-review",
+      "category": "code-review",
+      "tags": [
+        "cpp",
+        "c++",
+        "abseil",
+        "style-guide",
+        "google"
+      ]
+    },
+    {
+      "name": "google-python-review",
+      "source": "./plugins/google-python-review",
+      "category": "code-review",
+      "tags": [
+        "python",
+        "abseil",
+        "style-guide",
+        "google"
+      ]
+    }
+  ]
+}
