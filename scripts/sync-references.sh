@@ -6,8 +6,8 @@
 # ~/.claude/plugins/cache, and a submodule's contents don't come along. So the
 # guides are converted, chunked, and committed into each plugin instead.
 #
-#   ./scripts/sync-references.sh            # regenerate from current submodules
-#   ./scripts/sync-references.sh --update   # pull submodules to upstream tip first
+# Regenerates from whatever the submodules are currently checked out at. To move
+# them first, and for how to check them out at all, see DEV.md.
 #
 # Review the diff before committing: upstream rewrites shift chunk boundaries,
 # and the skills name chunk files.
@@ -22,19 +22,9 @@ tp="$repo_root/third_party"
 chunk() { python3 "$lib/chunk.py" "$@"; }
 vendor() { python3 "$lib/vendor.py" "$@"; }
 
-if [[ "${1:-}" == "--update" ]]; then
-  echo "==> Updating submodules to upstream tip"
-  git submodule update --remote --merge third_party/styleguide third_party/abseil-docs
-  # go and go-website are sparse or shallow clones, so refresh them directly.
-  for m in go go-website; do
-    git -C "$tp/$m" fetch --depth 1 origin HEAD
-    git -C "$tp/$m" checkout -q FETCH_HEAD -- . 2>/dev/null || git -C "$tp/$m" reset -q --hard FETCH_HEAD
-  done
-fi
-
 for m in styleguide abseil-docs go go-website; do
   if [[ ! -e "$tp/$m/.git" ]]; then
-    echo "error: $tp/$m is missing. Run: ./scripts/init-submodules.sh" >&2
+    echo "error: $tp/$m is not checked out. See DEV.md." >&2
     exit 1
   fi
 done
