@@ -1,181 +1,128 @@
 ---
 name: google-go-review
-description: Review Go code against Effective Go, the Google Go Style Guide (guide, decisions, best practices), and the go.dev module and language references. Fans out one sub-agent per guide section, applies the findings worth applying, then simplifies, trims redundant comments, and rewrites AI-sounding prose. Use after writing or generating Go code, or when asked for a Go style review, Go readability review, or Google Go review.
+description: Review Go code against Effective Go, the Google Go Style Guide, and the go.dev module and language references. Dispatches one sub-agent per guide section, applies what is worth applying, then simplifies and cleans up comments. Use after writing or generating Go code, or when asked for a Go style, readability, or Google Go review.
 ---
 
 # Google Go code review
 
-Six passes over a Go change, in order. Passes 1–3 fan out to read-only
-sub-agents, one per section of a style document; you collect their findings and
-decide what to apply. Passes 4–6 you do yourself.
+We're going to do a Go code review.
 
-Finish each pass — including its edits — before starting the next. Later passes
-read code the earlier ones rewrote.
+## Preflight
 
-This skill assumes the code already works. It reviews style, idiom, and clarity.
-It is not a bug hunt and not a security review.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/finding-format.md` first.
 
-## Step 0 — preflight, then scope
-
-**Check reference access first.** Read
-`${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/finding-format.md` before anything else.
-
-An installed plugin lives under `~/.claude/plugins/cache/`, outside the project,
-so reading its files can need a permission grant that a sub-agent cannot obtain
-on its own. If that read is denied or blocked, **stop**. Do not start the review.
-A reviewer that cannot open its style document falls back on what it already
-believes about Go, which is the exact failure this skill exists to prevent, and
-it does so without the result looking any different.
-
-Tell the user to grant it once, in `~/.claude/settings.json`:
+If that read is blocked, stop. Sub-agents cannot grant themselves access, and one
+that cannot open its style document reviews from memory instead — which looks
+identical to the real thing. Ask for this in `~/.claude/settings.json`, then wait:
 
 ```json
 { "permissions": { "allow": ["Read(~/.claude/plugins/cache/**)"] } }
 ```
 
-Or to start the session with `--add-dir` pointing at the plugin directory. Then
-stop and wait.
+## Scope
 
-### Scope
-
-Pick the review set, in this order:
+In order of preference:
 
 1. Files or directories the user named.
 2. Uncommitted changes, if `git status --porcelain` shows any.
-3. Otherwise the branch: `git diff $(git merge-base HEAD origin/main)...HEAD`.
+3. `git diff $(git merge-base HEAD origin/main)...HEAD`.
 
-Reduce to Go files. Drop vendored paths, `testdata/`, and generated files —
-anything whose first lines match `^// Code generated .* DO NOT EDIT\.$`.
+For this code review, you're going to look at Go files. Not vendored paths,
+`testdata/`, and files matching
+`^// Code generated .* DO NOT EDIT\.$`.
 
-If nothing is left, say so and stop.
-
-Then establish a baseline so you can tell your own breakage from what you
-inherited:
+Gather a baseline, so you can tell your breakage from what you inherited:
 
 ```sh
-gofmt -l .
-go build ./...
-go vet ./...
+gofmt -l . && go build ./... && go vet ./...
 ```
 
-Tell the user what you are reviewing — file count, package names, and the
-baseline result — before you start dispatching.
+Report scope and baseline before dispatching.
 
-## Passes 1–3 — the fan-out
+## Passes 1–3 — fan-out
 
-Each pass covers one document. Run them in this order, because later documents
-are more specific and take precedence over earlier ones:
+These should be fanned out to sub-agents in chunks, in appropriate measure with
+respect to how much code is being reviewed. Fewer code, fewer sub-agents (or
+none). Lots of code, more sub-agents.
 
-| Pass | Document                | Chunk index                                            |
-| ---- | ----------------------- | ------------------------------------------------------ |
-| 1    | Effective Go            | `${CLAUDE_PLUGIN_ROOT}/references/effective-go/index.md`        |
-| 2    | Go Style Best Practices | `${CLAUDE_PLUGIN_ROOT}/references/style-best-practices/index.md` |
-| 3    | Go Style Decisions      | `${CLAUDE_PLUGIN_ROOT}/references/style-decisions/index.md`     |
+| Pass | Document                | Chunk index                                                      |
+| ---- | ----------------------- | ---------------------------------------------------------------- |
+| 1    | Effective Go            | `${CLAUDE_PLUGIN_ROOT}/references/effective-go/index.md`          |
+| 2    | Go Style Best Practices | `${CLAUDE_PLUGIN_ROOT}/references/style-best-practices/index.md`  |
+| 3    | Go Style Decisions      | `${CLAUDE_PLUGIN_ROOT}/references/style-decisions/index.md`       |
 
-Read `${CLAUDE_PLUGIN_ROOT}/references/style-guide.md` yourself before pass 1.
-It is short, it is the canonical document, and it settles disputes among the
-others.
+Read `${CLAUDE_PLUGIN_ROOT}/references/style-guide.md` yourself first. It is
+short, and it settles disputes.
 
-For each pass:
+Per pass:
 
-1. Read the chunk index to get the chunk list.
-2. Dispatch one `jeanbza:go-style-reviewer` sub-agent per chunk, **all in
-   a single message** so they run in parallel. Use the prompt template below.
-3. Collect every reviewer's findings. If any reviewer returns
-   `BLOCKED: <path>`, stop — sub-agents lack the read permission from the
-   preflight. Report which chunks were unreviewed rather than applying a
-   partial pass as if it were complete. Otherwise deduplicate: parallel
-   reviewers converge on the same naming and error-handling problems.
-4. Adjudicate and apply, per the rules in
-   `${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/finding-format.md`.
-5. Re-run `gofmt -l`, `go build ./...`, and `go vet ./...`. Fix what you broke
-   before moving on.
-6. Report the pass in one line: chunks dispatched, findings received, findings
-   applied.
+1. Read the chunk index.
+2. Dispatch one `jeanbza:go-style-reviewer` per chunk, all in one message.
+3. On any `BLOCKED: <path>`, stop and report which chunks went unreviewed.
+   Otherwise deduplicate — parallel reviewers converge on the same problems.
+4. Adjudicate and apply per `finding-format.md`.
+5. Re-run the baseline. Fix what you broke.
+6. Report: chunks dispatched, findings received, findings applied.
 
-### Dispatch prompt template
+### Dispatch prompt
 
-> Review a Go change against your assigned section of **<document title>**.
+> Review a Go change against your assigned section of **<document>**.
 >
 > Your reference chunk: `<absolute path to NN-*.md>`
-> Read it in full before reading any code. Review against that chunk only.
+> Read it in full before any code. Review against that chunk only.
 >
 > Files in scope:
-> `<explicit list of file paths>`
+> `<paths>`
 >
-> See the change with: `<the exact git command from Step 0>`
-> If that command returns nothing, review the listed files as written.
+> See the change with: `<the scope command>`
+> If it returns nothing, review the listed files as written.
 >
-> Report findings in the format at
-> `${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/finding-format.md`. Read that file first.
-> Output findings and nothing else. If you have none, output `NO FINDINGS`.
+> Report in the format at
+> `${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/finding-format.md`. Read it
+> first. Findings only. If you have none, output `NO FINDINGS`.
 
 ### Precedence
 
-When findings conflict, the Google Go style documents rank themselves:
+Style Guide beats Decisions beats Best Practices beats Effective Go. Effective
+Go predates modules and generics; prefer the newer documents where they
+disagree.
 
-1. **Style Guide** (`style-guide.md`) — normative and canonical. Wins outright.
-2. **Style Decisions** — normative, not canonical.
-3. **Best Practices** — neither; guidance to follow absent a reason not to.
-4. **Effective Go** — background on idiom, and not actively maintained. Where it
-   predates modules or generics, prefer the newer documents.
-
-Below all four: the code's own established local convention. A change that is
-internally consistent with a package that has its own house style is usually
-better left consistent — note the divergence in the report instead.
+The surrounding package's own convention beats all four. Note divergences in the
+report rather than erasing them.
 
 ## Pass 4 — simplify
 
-Invoke the `simplify` skill on the same scope.
+Invoke the `simplify` skill on the same scope. If it is unavailable: collapse
+indirection, delete unused parameters and dead branches, replace hand-rolled
+loops with standard library calls, unify duplicated helpers. Prefer what the
+repository already has. Re-run the baseline.
 
-If it is unavailable, do the pass directly: collapse needless indirection,
-delete unused parameters and dead branches, replace hand-rolled loops with
-standard library calls that already do the job, unify duplicated helpers, and
-pull code to a consistent level of abstraction. Reuse what the repository
-already has instead of adding a second way to do the same thing.
+## Passes 5 and 6 — prose
 
-Re-run the baseline commands afterward.
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/prose-cleanup.md`: Pass A
+for redundant comments, then Pass B for AI-sounding prose.
 
-## Pass 5 — redundant comments
+## Pass 7 - fix
 
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/prose-cleanup.md`, Pass A.
+Run `go fix` on the affected code. `go fix` brings in Go modernisations.
 
-## Pass 6 — AI-sounding prose
+## Pass 8 - test
 
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/google-go-review/prose-cleanup.md`, Pass B.
+Make a judicious judgement about whether to run tests before declaring victory.
+Most of the time the answer is yes, unless the context in your conversation
+suggests otherwise.
 
-## Terminology (applies to every pass)
+## Terminology
 
-Whenever you write or rewrite a comment, doc comment, commit message, or piece
-of documentation:
+Comments and docs you write should always take their vocabulary canonical
+references, where available: `references/go-modules/` for Go modules,
+`references/go-spec/` for the Go language.
 
-- **Modules.** Use the vocabulary of the Go Modules Reference —
-  `${CLAUDE_PLUGIN_ROOT}/references/go-modules/`. Module path, module graph,
-  main module, build list, minimal version selection, replace directive,
-  vendoring, module cache, `go.sum`, canonical version, pseudo-version. Do not
-  call a module a package, a package a library, or a version a release.
-- **The language.** Use the vocabulary of the Go specification —
-  `${CLAUDE_PLUGIN_ROOT}/references/go-spec/`. Method set, receiver, type
-  parameter, type set, underlying type, composite literal, conversion versus
-  assertion, panic versus error, goroutine, channel direction. Do not call a
-  method a function, a struct an object, or a type assertion a cast.
+Grep them rather than approximating. Do not refer to "pinning" modules, for=
+example. Fix terminology in pass 5 or 6.
 
-Both directories carry an `index.md`; grep them when you are unsure of a term
-rather than approximating one. Correcting terminology in a comment is a Pass 5
-or Pass 6 edit — do not derail an earlier pass for it.
+## Report
 
-## Final report
-
-Structure it as:
-
-- **Scope** — what was reviewed.
-- **Per pass** — findings received, applied, and rejected. Give the reason for
-  each rejection; one line each is enough.
-- **Not applied, needs a decision** — anything correct that would change
-  behavior, plus conflicts you resolved by precedence that the user might want
-  resolved the other way.
-- **Verification** — the final `gofmt -l`, `go build ./...`, `go vet ./...`
-  results, and the test result if you ran tests.
-
-State test results honestly. If you did not run the tests, say you did not run
-them.
+- **Per pass** — received, applied, rejected, one line per rejection.
+- **Needs a decision** — findings that were right but would change behavior, and
+  conflicts you resolved by precedence.
