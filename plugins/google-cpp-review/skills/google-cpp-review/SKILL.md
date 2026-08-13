@@ -1,233 +1,173 @@
 ---
 name: google-cpp-review
-description: Review C++ code against the Google C++ Style Guide, the Abseil atomics guidance, and — for code that uses Abseil — the Abseil library guides. Fans out one sub-agent per guide section, applies the findings worth applying, then simplifies, trims redundant comments, and rewrites AI-sounding prose. Use after writing or generating C++ code, or when asked for a C++ style review, Google C++ review, or Abseil review.
+description: Review C++ code against the Google C++ Style Guide, Abseil's atomics guidance, and — for code that uses Abseil — the Abseil library guides. Dispatches one sub-agent per guide section, applies what is worth applying, then simplifies and cleans up comments. Use after writing or generating C++ code, or when asked for a C++ style, Google C++, or Abseil review.
 ---
 
 # Google C++ code review
 
-Six passes over a C++ change, in order. Passes 1–3 fan out to read-only
-sub-agents, one per reference document; you collect their findings and decide
-what to apply. Passes 4–6 you do yourself.
+We're going to do a C++ code review.
 
-Finish each pass — including its edits — before starting the next. Later passes
-read code the earlier ones rewrote.
+## Preflight
 
-This skill assumes the code already compiles and works. It reviews style, idiom,
-and clarity. It is not a bug hunt and not a security review — with one exception:
-pass 2 is about a class of concurrency bug that style review is the last chance
-to catch.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/finding-format.md` first.
 
-## Step 0 — preflight, then scope
-
-**Check reference access first.** Read
-`${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/finding-format.md` before anything else.
-
-An installed plugin lives under `~/.claude/plugins/cache/`, outside the project,
-so reading its files can need a permission grant that a sub-agent cannot obtain
-on its own. If that read is denied or blocked, **stop**. Do not start the review.
-A reviewer that cannot open its style document falls back on what it already
-believes about C++, which is the exact failure this skill exists to prevent, and
-it does so without the result looking any different.
-
-Tell the user to grant it once, in `~/.claude/settings.json`:
+If that read is blocked, stop. Sub-agents cannot grant themselves access, and one
+that cannot open its style document reviews from memory instead — which looks
+identical to the real thing. Ask for this in `~/.claude/settings.json`, then wait:
 
 ```json
 { "permissions": { "allow": ["Read(~/.claude/plugins/cache/**)"] } }
 ```
 
-Or to start the session with `--add-dir` pointing at the plugin directory. Then
-stop and wait.
+## Scope
 
-### Scope
-
-Pick the review set, in this order:
+In order of preference:
 
 1. Files or directories the user named.
 2. Uncommitted changes, if `git status --porcelain` shows any.
-3. Otherwise the branch: `git diff $(git merge-base HEAD origin/main)...HEAD`.
+3. `git diff $(git merge-base HEAD origin/main)...HEAD`.
 
-Reduce to C++ files — `.cc`, `.cpp`, `.cxx`, `.h`, `.hpp`, `.inc`. Keep headers
-and their implementation files together even when only one side changed; the
-guide's rules on ownership, inlining, and include order span both. Drop
-third-party and vendored trees, and generated files such as `.pb.h`, `.pb.cc`,
-and anything marked generated in a leading comment.
+For this code review, you're going to look at `.cc`, `.cpp`, `.cxx`, `.h`,
+`.hpp`, and `.inc` files. Not third-party or vendored trees, and not generated
+output like `.pb.h` and `.pb.cc`. Keep headers with their implementation files
+even when only one side changed — the rules on ownership, inlining, and include
+order span both.
 
-If nothing is left, say so and stop.
+Gather a baseline from whatever the project actually has: `BUILD`/`BUILD.bazel`,
+`CMakeLists.txt`, a `Makefile`, `compile_commands.json`, `.clang-format`. Say
+what you found and what you ran. If there is no build you can invoke, say that
+too — you are relying on review rather than the compiler, and that is worth
+knowing.
 
-Then establish a baseline, using whatever the repository actually has. Look for
-`BUILD`/`BUILD.bazel`, `CMakeLists.txt`, a `Makefile`, or `compile_commands.json`
-and use the matching command; if a `.clang-format` exists, run
-`clang-format --dry-run --Werror` over the scope. Say what you found and what
-you ran. If the project has no build you can invoke, say that too and continue —
-you will be relying on review rather than the compiler, which is worth telling
-the user.
+Report scope and baseline before dispatching.
 
-Tell the user what you are reviewing — file count, targets, and the baseline
-result — before you start dispatching.
+## Passes 1–3 — fan-out
 
-## Pass 1 — Google C++ Style Guide
+These should be fanned out to sub-agents in chunks, in appropriate measure with
+respect to how much code is being reviewed. Less code, fewer sub-agents (or
+none). Lots of code, more sub-agents.
 
-Read `${CLAUDE_PLUGIN_ROOT}/references/cpp-style-guide/index.md` for the chunk
-list. Dispatch one `jeanbza:cpp-style-reviewer` sub-agent per chunk, **all
-in a single message** so they run in parallel.
+| Pass | Document               | Chunk index                                                    |
+| ---- | ---------------------- | -------------------------------------------------------------- |
+| 1    | Google C++ Style Guide | `${CLAUDE_PLUGIN_ROOT}/references/cpp-style-guide/index.md`     |
+| 2    | The danger of atomics  | `${CLAUDE_PLUGIN_ROOT}/references/abseil/atomic-danger.md`      |
+| 3    | Abseil guides          | `${CLAUDE_PLUGIN_ROOT}/references/abseil/guides/index.md`       |
 
-Use the dispatch template below with document title *Google C++ Style Guide*.
+Pass 2 is one sub-agent, not a fan-out, and it runs whether or not the project
+uses Abseil — it is about `std::atomic` and lock-free reasoning, not the
+library. Skip it only when the scope has no atomics, no `std::memory_order`, and
+no hand-rolled synchronization. Say that you skipped it.
 
-Then collect, deduplicate, adjudicate, and apply per
-`${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/finding-format.md`. Rebuild and re-run the
-formatter check afterward.
-
-If any reviewer returns `BLOCKED: <path>`, stop — sub-agents lack the read
-permission from the preflight. Report which chunks were unreviewed rather than
-applying a partial pass as if it were complete. The same applies to passes 2
-and 3.
-
-## Pass 2 — the danger of atomics
-
-Dispatch a single `jeanbza:cpp-style-reviewer` sub-agent against
-`${CLAUDE_PLUGIN_ROOT}/references/abseil/atomic-danger.md`.
-
-Run this pass whether or not the code uses Abseil — it is about
-`std::atomic` and lock-free reasoning, not about the library.
-
-Skip it only when the scope contains no atomics, no `std::memory_order`, no
-hand-rolled synchronization, and no lock-free data structures. Say that you
-skipped it and why.
-
-Findings from this pass outrank style findings. If a reviewer says a lock-free
-construction is unsound, do not restyle it — surface it in the final report as a
-correctness question for the user, and leave the code alone unless the fix is
-unambiguous.
-
-## Pass 3 — Abseil guides
-
-First determine whether the change uses Abseil at all:
+Pass 3 runs only if the change uses Abseil:
 
 ```sh
 grep -rn 'absl::\|#include "absl/' <files in scope>
 ```
 
-If it does not, skip this pass and say so.
+If it does, dispatch one sub-agent per guide the change actually engages. A
+reviewer holding a guide for a library the code never touches produces nothing
+but latency.
 
-If it does, map the Abseil headers the change includes or uses to guides, and
-dispatch one sub-agent per matched guide, all in a single message. The full list
-is in `${CLAUDE_PLUGIN_ROOT}/references/abseil/guides/index.md`.
-
-| Abseil headers used                                              | Guide                       |
-| ---------------------------------------------------------------- | --------------------------- |
-| `absl/base/` — attributes, optimization, casts, call_once, thread_annotations | `base.md`         |
-| `absl/base/options.h`                                            | `options.md`                |
-| `absl/container/`                                                | `container.md`              |
-| `absl/flags/`                                                    | `flags.md`                  |
-| `absl/hash/`                                                     | `hash.md`                   |
-| `absl/log/`, `absl/log/check.h`                                  | `logging.md`                |
-| `absl/meta/type_traits.h`                                        | `meta.md`                   |
-| `absl/numeric/` — int128, bits                                   | `numeric.md`                |
-| `absl/random/`                                                   | `random.md`                 |
+| Headers used                                                     | Guide                          |
+| ----------------------------------------------------------------- | ------------------------------ |
+| `absl/base/` — attributes, optimization, casts, thread_annotations | `base.md`                      |
+| `absl/base/options.h`                                            | `options.md`                   |
+| `absl/container/`                                                | `container.md`                 |
+| `absl/flags/`                                                    | `flags.md`                     |
+| `absl/hash/`                                                     | `hash.md`                      |
+| `absl/log/`, `absl/log/check.h`                                  | `logging.md`                   |
+| `absl/meta/type_traits.h`                                        | `meta.md`                      |
+| `absl/numeric/` — int128, bits                                   | `numeric.md`                   |
+| `absl/random/`                                                   | `random.md`                    |
 | `absl/status/`                                                   | `status.md`, `status-codes.md` |
-| `absl/strings/`                                                  | `strings.md`                |
-| `absl/strings/str_format.h`                                      | `format.md`                 |
-| an `AbslStringify` overload, or a type formatted by one          | `abslstringify.md`          |
-| `absl/synchronization/` — mutex, notification, barrier           | `synchronization.md`        |
-| `absl/time/`                                                     | `time.md`                   |
-| `absl/types/` — span, optional, variant, any                     | `types.md`                  |
+| `absl/strings/`                                                  | `strings.md`                   |
+| `absl/strings/str_format.h`                                      | `format.md`                    |
+| an `AbslStringify` overload, or a type formatted by one           | `abslstringify.md`             |
+| `absl/synchronization/` — mutex, notification, barrier            | `synchronization.md`           |
+| `absl/time/`                                                     | `time.md`                      |
+| `absl/types/` — span, optional, variant, any                     | `types.md`                     |
 
-Dispatch only for guides the change actually engages. A reviewer holding a guide
-for a library the code never touches produces nothing but latency.
+Per pass:
 
-Then collect, adjudicate, and apply as in pass 1.
+1. Read the chunk index.
+2. Dispatch one `jeanbza:cpp-style-reviewer` per chunk, all in one message.
+3. On any `BLOCKED: <path>`, stop and report which chunks went unreviewed.
+   Otherwise deduplicate — parallel reviewers converge on the same problems.
+4. Adjudicate and apply per `finding-format.md`.
+5. Rebuild and re-run the format check. Fix what you broke.
+6. Report: chunks dispatched, findings received, findings applied.
 
-## Dispatch prompt template
+### Dispatch prompt
 
-> Review a C++ change against **<document title>**.
+> Review a C++ change against **<document>**.
 >
 > Your reference document: `<absolute path>`
-> Read it in full before reading any code. Review against that document only.
+> Read it in full before any code. Review against that document only.
 >
 > Files in scope:
-> `<explicit list of file paths>`
+> `<paths>`
 >
-> See the change with: `<the exact git command from Step 0>`
-> If that command returns nothing, review the listed files as written.
+> See the change with: `<the scope command>`
+> If it returns nothing, review the listed files as written.
 >
-> Report findings in the format at
-> `${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/finding-format.md`. Read that file first.
-> Output findings and nothing else. If you have none, output `NO FINDINGS`.
+> Report in the format at
+> `${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/finding-format.md`. Read it
+> first. Findings only. If you have none, output `NO FINDINGS`.
 
-## Precedence
+### Precedence
 
-When findings conflict:
+Atomics correctness beats everything — style never justifies an unsound memory
+model. If a reviewer says a lock-free construction is wrong, do not restyle it;
+put it in the report as a correctness question and leave the code alone unless
+the fix is unambiguous.
 
-1. **Atomics correctness** (pass 2) beats everything. Style never justifies an
-   unsound memory model.
-2. **Google C++ Style Guide** — the normative document for style.
-3. **Abseil guides** — authoritative on how to use the library, and on the
-   idioms the style guide leaves open.
-4. The code's own established local convention. A change that is internally
-   consistent with a file that has its own house style is usually better left
-   consistent; note the divergence in the report instead.
+Below that: Style Guide beats Abseil guides beats the surrounding file's own
+convention. Note divergences in the report rather than erasing them.
 
 The style guide states most rules with explicit exceptions. Check them before
 applying a finding — the exception is part of the rule.
 
 ## Pass 4 — simplify
 
-Invoke the `simplify` skill on the same scope.
+Invoke the `simplify` skill on the same scope. If it is unavailable: collapse
+indirection, delete unused parameters and dead branches, replace hand-rolled
+loops with standard library or Abseil algorithms, unify duplicated helpers.
+Prefer what the repository already has. Rebuild.
 
-If it is unavailable, do the pass directly: collapse needless indirection,
-delete unused parameters and dead branches, replace hand-rolled loops with
-standard library or Abseil algorithms that already do the job, unify duplicated
-helpers, and pull code to a consistent level of abstraction. Reuse what the
-repository already has instead of adding a second way to do the same thing.
+## Passes 5 and 6 — prose
 
-Re-run the baseline build afterward.
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/prose-cleanup.md`: Pass A
+for redundant comments, then Pass B for AI-sounding prose.
 
-## Pass 5 — redundant comments
+## Pass 7 — modernize
 
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/prose-cleanup.md`, Pass A.
+If the project configures clang-tidy, run its `modernize-*` checks over the
+scope and apply what fits. Do not introduce clang-tidy to a project that does
+not already use it, and do not adopt a language version the build does not set.
 
-## Pass 6 — AI-sounding prose
+## Pass 8 — test
 
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/google-cpp-review/prose-cleanup.md`, Pass B.
+Make a judicious judgement about whether to run tests before declaring victory.
+Most of the time the answer is yes, unless the context in your conversation
+suggests otherwise.
 
-## Terminology (applies to every pass)
+## Terminology
 
-Whenever you write or rewrite a comment, commit message, or piece of
-documentation about the C++ language itself, get the terms right. Check
-https://en.cppreference.com/ when you are unsure — it is the reference of
-record for value categories, lifetime, initialization, overload resolution, and
-the memory model.
+Comments and docs you write should get C++ terms right — value categories,
+lifetime, initialization, overload resolution, the memory model. Check
+https://en.cppreference.com/ when unsure.
 
-Then write it for a working engineer, not for the standard. cppreference is the
-source of truth about *what is correct*, not a model for *how to say it*:
+Then write it for a working engineer, not for the standard. "Dangles if the
+parent is destroyed first" beats "the behavior is undefined if the referent's
+lifetime has ended". Say "a temporary" unless the reader actually needs
+*xvalue*. Never trade accuracy for approachability — if the precise term is the
+only correct one, use it and explain it in the same breath. Fix terminology in
+pass 5 or 6.
 
-| cppreference register                                             | What to write                             |
-| ----------------------------------------------------------------- | ----------------------------------------- |
-| "the behavior is undefined if the referent's lifetime has ended"  | "dangles if the parent is destroyed first" |
-| "participates in overload resolution only if ..."                 | "only picked when ..."                    |
-| "an lvalue of type T designating the object"                      | "the object itself, not a copy"           |
+## Report
 
-Precision without jargon. Say *xvalue* only when the distinction from *prvalue*
-is what the reader needs; say "a temporary" when that is enough. Never trade
-accuracy for approachability — if the precise term is the only correct one, use
-it and explain it in the same breath.
-
-Correcting terminology in a comment is a Pass 5 or Pass 6 edit — do not derail
-an earlier pass for it.
-
-## Final report
-
-Structure it as:
-
-- **Scope** — what was reviewed, and what build or format check you ran.
-- **Per pass** — findings received, applied, and rejected. Give the reason for
-  each rejection; one line each is enough. Say explicitly if you skipped pass 2
-  or pass 3, and why.
-- **Not applied, needs a decision** — anything correct that would change
-  behavior, every atomics finding you did not act on, and conflicts you resolved
-  by precedence that the user might want resolved the other way.
-- **Verification** — the final build and format-check results, and the test
-  result if you ran tests.
-
-State build and test results honestly. If the project has no build you could
-run, say so plainly rather than implying the change was verified.
+- **Per pass** — received, applied, rejected, one line per rejection. Say if you
+  skipped pass 2 or pass 3, and why.
+- **Needs a decision** — findings that were right but would change behavior,
+  every atomics finding you did not act on, and conflicts you resolved by
+  precedence.
