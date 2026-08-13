@@ -38,7 +38,3 @@ Run them like so:
 /jeanbza:google-cpp-review
 /jeanbza:google-py-review
 ```
-
-## Hacking on this repo
-
-See [DEV.md](DEV.md).
